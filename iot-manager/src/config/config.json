@@ -1,0 +1,7 @@
+{
+  "brokerUrl": "mqtt://localhost:1883",
+  "topics": {
+    "deviceStatus": "device/status",
+    "deviceControl": "device/control"
+  }
+}

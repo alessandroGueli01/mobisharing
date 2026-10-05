@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobisharing - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .vehicle-card { cursor: pointer; transition: transform 0.2s; }
+        .vehicle-card:hover { transform: scale(1.02); }
+        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
+        .bg-available { background-color: #28a745; }
+        .bg-in_use { background-color: #dc3545; }
+        .bg-maintenance, .bg-low_battery { background-color: #ffc107; }
+    </style>
+</head>
+<body class="bg-light">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">Mobisharing</a>
+            <div class="d-flex" id="navAuth">
+                <!-- Popolato via JS -->
+            </div>
+        </div>
+    </nav>
+
+    <!-- Login Container -->
+    <div class="container mt-5" id="loginContainer">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h3 class="text-center mb-4">Accedi</h3>
+                        <form id="loginForm">
+                            <div class="mb-3">
+                                <label>Email</label>
+                                <input type="email" class="form-control" id="email" value="mario@test.com" required>
+                                <div class="form-text">User: mario@test.com | Admin: admin@test.com</div>
+                            </div>
+                            <div class="mb-3">
+                                <label>Password</label>
+                                <input type="password" class="form-control" id="password" value="password123" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Login</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Container -->
+    <div class="container mt-4 d-none" id="dashboardContainer">
+        
+        <!-- Manager Section -->
+        <div id="managerSection" class="d-none mb-5">
+            <h3 class="text-danger border-bottom pb-2">Area Gestore</h3>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white">Utenti Sospesi</div>
+                        <div class="card-body">
+                            <ul class="list-group" id="suspendedUsersList">
+                                <li class="list-group-item text-muted">Nessun utente sospeso.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white">Stato Flotta</div>
+                        <div class="card-body" id="fleetStatus">
+                            <!-- Lista veicoli -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Info & Active Ride -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>Benvenuto, <span id="userName">User</span></h5>
+                        <p>Credito Residuo: <strong id="userCredit">0.00 €</strong></p>
+                        <button class="btn btn-sm btn-outline-success" onclick="addCredit()">Ricarica 10€</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-info" id="activeRideCard" style="display:none;">
+                    <div class="card-body">
+                        <h5 class="text-info">Corsa in Corso</h5>
+                        <p>Veicolo: <span id="rideVehicle"></span></p>
+                        <button class="btn btn-danger w-100" onclick="endRide()">Termina Corsa</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Parking Areas -->
+        <h4>Aree di Parcheggio</h4>
+        <div class="row" id="parkingList">
+            <!-- Popolato via JS -->
+        </div>
+
+        <!-- Vehicles in Selected Parking -->
+        <div id="vehiclesSection" class="mt-4 d-none">
+            <h4 id="selectedParkingName">Veicoli Disponibili</h4>
+            <div class="row" id="vehicleList">
+                <!-- Popolato via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let currentRideId = localStorage.getItem('currentRideId');
+        let selectedParkingId = null;
+
+        // Init
+        if (token) {
+            showDashboard();
+        }
+
+        // Login Logic
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    token = data.token;
+                    currentUser = data.user;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('user', JSON.stringify(currentUser));
+                    showDashboard();
+                } else {
+                    alert(data.message);
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Errore di connessione');
+            }
+        });
+
+        function showDashboard() {
+            document.getElementById('loginContainer').classList.add('d-none');
+            document.getElementById('dashboardContainer').classList.remove('d-none');
+            
+            const storedUser = JSON.parse(localStorage.getItem('user'));
+            if (storedUser) {
+                document.getElementById('userName').innerText = storedUser.name;
+                updateCredit(storedUser.id);
+
+                // Show Manager Section if admin
+                if (storedUser.role === 'admin' || storedUser.role === 'manager') {
+                    document.getElementById('managerSection').classList.remove('d-none');
+                    loadManagerData();
+                }
+            }
+
+            document.getElementById('navAuth').innerHTML = 
+                `<button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button>`;
+
+            loadParkingAreas();
+            if (currentRideId) showActiveRide();
+        }
+
+        function logout() {
+            localStorage.clear();
+            location.reload();
+        }
+
+        // --- MANAGER FUNCTIONS ---
+        async function loadManagerData() {
+            // Load Suspended Users
+            const resUsers = await fetch(`${API_URL}/auth/suspended`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const users = await resUsers.json();
+            const userList = document.getElementById('suspendedUsersList');
+            userList.innerHTML = '';
+            if (users.length === 0) userList.innerHTML = '<li class="list-group-item text-muted">Nessun utente sospeso.</li>';
+            
+            users.forEach(u => {
+                userList.innerHTML += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${u.name}</strong> (${u.email})<br>
+                            <small class="text-danger">Credito: ${u.credit}€</small>
+                        </div>
+                        <button class="btn btn-sm btn-success" onclick="reactivateUser(${u.id})">Riattiva</button>
+                    </li>
+                `;
+            });
+
+            // Load Fleet Status
+            const resVehicles = await fetch(`${API_URL}/vehicles`);
+            const vehicles = await resVehicles.json();
+            const fleetDiv = document.getElementById('fleetStatus');
+            fleetDiv.innerHTML = '';
+            
+            vehicles.forEach(v => {
+                let badgeClass = 'bg-success';
+                if (v.status === 'in_use') badgeClass = 'bg-primary';
+                if (v.status === 'maintenance' || v.status === 'low_battery') badgeClass = 'bg-warning text-dark';
+
+                fleetDiv.innerHTML += `
+                    <div class="d-flex justify-content-between border-bottom py-2">
+                        <span>${v.code} (${v.type})</span>
+                        <span>
+                            <span class="badge bg-secondary">Batt: ${v.batteryLevel}%</span>
+                            <span class="badge ${badgeClass}">${v.status}</span>
+                        </span>
+                    </div>
+                `;
+            });
+        }
+
+        async function reactivateUser(userId) {
+            if(!confirm('Confermi la riattivazione dell\'utente?')) return;
+            
+            const res = await fetch(`${API_URL}/auth/status/${userId}`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ status: 'active' })
+            });
+            
+            if (res.ok) {
+                alert('Utente riattivato!');
+                loadManagerData();
+            } else {
+                alert('Errore riattivazione');
+            }
+        }
+        // -------------------------
+
+        async function updateCredit(userId) {
+            const res = await fetch(`${API_URL}/auth/profile/${userId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const user = await res.json();
+            document.getElementById('userCredit').innerText = user.credit.toFixed(2) + ' €';
+        }
+
+        async function addCredit() {
+            const user = JSON.parse(localStorage.getItem('user'));
+            await fetch(`${API_URL}/auth/credit/${user.id}`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ amount: 10 })
+            });
+            updateCredit(user.id);
+        }
+
+        async function loadParkingAreas() {
+            const res = await fetch(`${API_URL}/parking`);
+            const areas = await res.json();
+            const container = document.getElementById('parkingList');
+            container.innerHTML = '';
+
+            areas.forEach(area => {
+                const availableCount = area.Vehicles ? area.Vehicles.filter(v => v.status === 'available').length : 0;
+                container.innerHTML += `
+                    <div class="col-md-4 mb-3">
+                        <div class="card vehicle-card" onclick="loadVehicles(${area.id}, '${area.name}')">
+                            <div class="card-body">
+                                <h5>${area.name}</h5>
+                                <p class="text-muted">Capienza: ${area.capacity}</p>
+                                <span class="badge bg-success">${availableCount} Veicoli Disponibili</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        async function loadVehicles(parkingId, parkingName) {
+            selectedParkingId = parkingId;
+            document.getElementById('vehiclesSection').classList.remove('d-none');
+            document.getElementById('selectedParkingName').innerText = `Veicoli in ${parkingName}`;
+            
+            const res = await fetch(`${API_URL}/vehicles/available/${parkingId}`);
+            const vehicles = await res.json();
+            const container = document.getElementById('vehicleList');
+            container.innerHTML = '';
+
+            if (vehicles.length === 0) {
+                container.innerHTML = '<p class="text-muted ms-3">Nessun veicolo disponibile qui.</p>';
+                return;
+            }
+
+            vehicles.forEach(v => {
+                container.innerHTML += `
+                    <div class="col-md-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h6>${v.type.toUpperCase().replace('_', ' ')}</h6>
+                                <p class="small text-muted">${v.code}</p>
+                                <p>🔋 ${v.batteryLevel}%</p>
+                                <button class="btn btn-primary btn-sm" onclick="startRide(${v.id})">Noleggia</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        async function startRide(vehicleId) {
+            if (currentRideId) {
+                alert("Hai già una corsa attiva!");
+                return;
+            }
+
+            const res = await fetch(`${API_URL}/rides/start`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ vehicleId, startParkingId: selectedParkingId })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                currentRideId = data.ride.id;
+                localStorage.setItem('currentRideId', currentRideId);
+                localStorage.setItem('rideVehicle', vehicleId);
+                showActiveRide();
+                loadParkingAreas(); // Refresh
+                loadVehicles(selectedParkingId, document.getElementById('selectedParkingName').innerText.split('in ')[1]);
+            } else {
+                alert(data.message);
+            }
+        }
+
+        function showActiveRide() {
+            document.getElementById('activeRideCard').style.display = 'block';
+            document.getElementById('rideVehicle').innerText = 'ID ' + localStorage.getItem('rideVehicle');
+        }
+
+        async function endRide() {
+            // Per semplicità, terminiamo la corsa nello stesso parcheggio selezionato o nel primo disponibile
+            const endParkingId = selectedParkingId || 1; 
+
+            const res = await fetch(`${API_URL}/rides/${currentRideId}/end`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ endParkingId, issues: false })
+            });
+
+            const data = await res.json();
+            alert(`Corsa terminata! Costo: ${data.cost}€`);
+            localStorage.removeItem('currentRideId');
+            document.getElementById('activeRideCard').style.display = 'none';
+            location.reload();
+        }
+    </script>
+</body>
+</html>

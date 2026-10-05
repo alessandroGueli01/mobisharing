@@ -1,0 +1,5 @@
+[
+    {"id": "1", "type": "bike"},
+    {"id": "2", "type": "ebike"},
+    {"id": "3", "type": "scooter"}
+]
